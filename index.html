@@ -247,7 +247,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
 <!-- ============================================================
      INTRO ANIMATION (Three.js)
-     1. Your logo breaks into dots that fly together into a film camera
+     1. Your logo shatters into pieces that fly together and build the camera
      2. The camera turns so its lens looks right at the viewer
      3. A slate with your logo drops in and snaps shut
      4. Everything fades to the homepage
@@ -259,14 +259,16 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
   import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
   // ---------- TIMELINE (seconds after the logo has faded in) ----------
+  // Steps overlap on purpose so the whole thing flows as one move.
   const T = {
-    morphStart: 0.2,  morphEnd: 1.4,    // dots fly from logo to camera
-    solidStart: 1.3,  solidEnd: 1.65,   // camera turns solid
-    turnStart: 1.6,   turnEnd: 2.2,     // lens swings to face the viewer
-    stareEnd: 2.45,                     // lens holds its stare (iris tightens)
-    slateStart: 2.45, slateEnd: 2.85,   // slate drops in
-    snapStart: 3.0,   snapEnd: 3.08,    // clapstick snaps shut
-    finish: 3.2                         // fade to homepage (whole intro ≈ 5s)
+    hold: 0.15,                         // logo sits whole for a beat
+    sweep: 0.7,                         // pieces break off left → right over this long
+    travel: 1.0,                        // each piece's flight onto the camera
+    turnStart: 1.55,  turnEnd: 2.45,    // lens swings to face the viewer (while the last pieces land)
+    stareEnd: 2.7,                      // iris tightens
+    slateStart: 2.4,  slateEnd: 2.8,    // slate drops in as the turn settles
+    snapStart: 2.85,  snapEnd: 2.93,    // clapstick snaps shut
+    finish: 2.95                        // fade to homepage right on the snap (whole intro ≈ 5s)
   };
 
   const intro = document.getElementById('intro');
@@ -280,20 +282,24 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
   const easeOutBack = x => 1 + 2.4 * Math.pow(x - 1, 3) + 1.4 * Math.pow(x - 1, 2);
   const lerp = (a, b, x) => a + (b - a) * x;
 
-  // ---------- read the logo's pixels so dots can start exactly where the letters are ----------
-  function sampleLogo(image, count) {
+  // ---------- cut the logo into a grid of small pieces, keeping only the ones with ink ----------
+  function logoPieces(image, cols) {
     const c = document.createElement('canvas');
     c.width = image.naturalWidth; c.height = image.naturalHeight;
     const ctx = c.getContext('2d');
     ctx.drawImage(image, 0, 0);
     const data = ctx.getImageData(0, 0, c.width, c.height).data; // fails if opened as a local file
-    const ink = [];
-    for (let y = 0; y < c.height; y += 1)
-      for (let x = 0; x < c.width; x += 1)
-        if (data[(y * c.width + x) * 4 + 3] > 140) ink.push([x / c.width, y / c.height]);
-    const out = [];
-    for (let i = 0; i < count; i++) out.push(ink[(Math.random() * ink.length) | 0]);
-    return { pts: out, coverage: ink.length / (c.width * c.height) };
+    const cell = c.width / cols, rows = Math.ceil(c.height / cell);
+    const pieces = [];
+    for (let row = 0; row < rows; row++)
+      for (let col = 0; col < cols; col++) {
+        let ink = 0, n = 0;
+        for (let y = Math.floor(row * cell); y < Math.min(c.height, (row + 1) * cell); y += 2)
+          for (let x = Math.floor(col * cell); x < Math.min(c.width, (col + 1) * cell); x += 2, n++)
+            if (data[(y * c.width + x) * 4 + 3] > 40) ink++;
+        if (n && ink / n > .04) pieces.push({ col, row });
+      }
+    return { pieces, cols, rows, cellU: 1 / cols, cellV: cell / c.height };
   }
 
   // ---------- the cinema camera (modeled on an ARRI ALEXA 35 rig), built from simple shapes ----------
@@ -519,14 +525,16 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     if (performance.now() > 1800 || intro.classList.contains('skip')) return; // too late; simple fade plays
 
-    const N = innerWidth < 700 ? 5000 : 8000;
     let logo;
-    try { logo = sampleLogo(img, N); } catch (e) { return; }
+    try { logo = logoPieces(img, innerWidth < 700 ? 64 : 96); } catch (e) { return; }
+    const N = logo.pieces.length;
+    if (!N) return;
 
     const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight, false);
     renderer.toneMapping = THREE.NeutralToneMapping;   // keeps the cream/black true while softening highlights
+    renderer.localClippingEnabled = true;               // lets the camera "build" as pieces land
     intro.classList.add('cine');
 
     const scene = new THREE.Scene();
@@ -547,14 +555,17 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
     const world = new THREE.Group(); scene.add(world);
 
-    // camera, posed at a 3/4 angle for the morph
+    // camera, posed at a 3/4 angle while it's built
     const { g: camera3d, iris, mats } = buildCamera();
     camera3d.scale.setScalar(S);
     camera3d.position.set(0, -.1 * S, 0);
     camera3d.rotation.set(.12, -.65, 0);
     world.add(camera3d);
-    mats.forEach(m => { m.transparent = true; m.opacity = 0; });
-    camera3d.visible = false;
+    camera3d.updateMatrixWorld(true);
+    const buildPose = camera3d.matrixWorld.clone(), buildPoseInv = buildPose.clone().invert();
+    // a moving cut-off plane: only the part of the camera the pieces have reached is drawn
+    const clip = new THREE.Plane(new THREE.Vector3(-1, 0, 0), -1e3);
+    mats.forEach(m => { m.clippingPlanes = [clip]; });
 
     // soft shadow on the "floor" under the camera
     const sc = document.createElement('canvas'); sc.width = sc.height = 256;
@@ -568,57 +579,76 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     shadow.scale.set(4.6 * S, 3.4 * S, 1);
     world.add(shadow);
 
-    // dots: start on the logo, end on the camera
+    // logo pieces: each starts exactly on its patch of the logo and lands on the camera's surface
     const rect = img.getBoundingClientRect();
-    const starts = logo.pts.map(([u, v]) => new THREE.Vector3(
-      (rect.left + u * rect.width - innerWidth / 2) * px,
-      -(rect.top + v * rect.height - innerHeight / 2) * px, 0));
-    const ends = sampleSurface(camera3d, N);
-    starts.sort((p, q) => p.x - q.x);       // left letters → left side of camera
-    ends.sort((p, q) => p.x - q.x);
-    const aStart = new Float32Array(N * 3), aEnd = new Float32Array(N * 3), aMid = new Float32Array(N * 3), aDelay = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      const s = starts[i], e = ends[i];
-      aStart.set([s.x, s.y, s.z], i * 3);
-      aEnd.set([e.x, e.y, e.z], i * 3);
-      aMid.set([(s.x + e.x) / 2 + (Math.random() - .5) * 2.4 * S,
-                (s.y + e.y) / 2 + (Math.random() - .5) * 2.4 * S,
-                2 + Math.random() * 2.5], i * 3);
-      aDelay[i] = (i / N) * .25 + Math.random() * .1;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(aStart.slice(), 3));
-    geo.setAttribute('aStart', new THREE.BufferAttribute(aStart, 3));
-    geo.setAttribute('aEnd', new THREE.BufferAttribute(aEnd, 3));
-    geo.setAttribute('aMid', new THREE.BufferAttribute(aMid, 3));
-    geo.setAttribute('aDelay', new THREE.BufferAttribute(aDelay, 1));
-    const dot = Math.min(4, Math.max(1.6, Math.sqrt(logo.coverage * rect.width * rect.height / N) * 1.7));
-    const dotsMat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false,
-      uniforms: { uP: { value: 0 }, uSize: { value: dot }, uPR: { value: renderer.getPixelRatio() },
-                  uDist: { value: DIST }, uOpacity: { value: 0 }, uColor: { value: new THREE.Color(INK) } },
+    const tile = rect.width / logo.cols * px;                        // piece size in 3D units
+    const starts = logo.pieces.map(({ col, row }) => new THREE.Vector3(
+      (rect.left + (col + .5) * rect.width / logo.cols - innerWidth / 2) * px,
+      -(rect.top + (row + .5) * logo.cellV * rect.height - innerHeight / 2) * px, 0));
+    const order = starts.map((_, i) => i).sort((i, j) => starts[i].x - starts[j].x);
+    const ends = sampleSurface(camera3d, N).sort((p, q) => p.x - q.x); // left letters → left side of camera
+    const endX = ends.map(e => e.x);
+    const minX = starts[order[0]].x, spanX = starts[order[N - 1]].x - minX || 1;
+    const aStart = new Float32Array(N * 3), aEnd = new Float32Array(N * 3), aMid = new Float32Array(N * 3);
+    const aUV = new Float32Array(N * 2), aAxis = new Float32Array(N * 3), aDelay = new Float32Array(N), aSpin = new Float32Array(N);
+    const v = new THREE.Vector3();
+    order.forEach((pi, k) => {
+      const s0 = starts[pi], e = ends[k], { col, row } = logo.pieces[pi];
+      aStart.set([s0.x, s0.y, 0], pi * 3);
+      v.copy(e).applyMatrix4(buildPoseInv); aEnd.set([v.x, v.y, v.z], pi * 3);   // stored on the camera, so it follows the turn
+      aMid.set([lerp(s0.x, e.x, .45) + (Math.random() - .5) * 1.6 * S,
+                lerp(s0.y, e.y, .45) + (Math.random() - .3) * 1.6 * S,
+                1.5 + Math.random() * 2], pi * 3);
+      aUV.set([col * logo.cellU, 1 - (row + 1) * logo.cellV], pi * 2);
+      v.set(Math.random() - .5, Math.random() - .5, Math.random() - .5).normalize(); aAxis.set([v.x, v.y, v.z], pi * 3);
+      aSpin[pi] = (Math.random() * 2 - 1) * 7;
+      aDelay[pi] = T.hold + (s0.x - minX) / spanX * T.sweep + Math.random() * .12;
+    });
+    const geo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1));
+    geo.instanceCount = N;
+    geo.setAttribute('aStart', new THREE.InstancedBufferAttribute(aStart, 3));
+    geo.setAttribute('aEnd', new THREE.InstancedBufferAttribute(aEnd, 3));
+    geo.setAttribute('aMid', new THREE.InstancedBufferAttribute(aMid, 3));
+    geo.setAttribute('aUV', new THREE.InstancedBufferAttribute(aUV, 2));
+    geo.setAttribute('aAxis', new THREE.InstancedBufferAttribute(aAxis, 3));
+    geo.setAttribute('aSpin', new THREE.InstancedBufferAttribute(aSpin, 1));
+    geo.setAttribute('aDelay', new THREE.InstancedBufferAttribute(aDelay, 1));
+    const logoTex = new THREE.Texture(img); logoTex.needsUpdate = true;
+    const piecesMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { uTime: { value: 0 }, uTravel: { value: T.travel }, uTile: { value: tile * 1.04 },
+                  uCell: { value: new THREE.Vector2(logo.cellU, logo.cellV) }, uMap: { value: logoTex },
+                  uCam: { value: new THREE.Matrix4() } },
       vertexShader: `
-        uniform float uP, uSize, uPR, uDist;
-        attribute vec3 aStart, aEnd, aMid; attribute float aDelay;
+        uniform float uTime, uTravel, uTile; uniform vec2 uCell; uniform mat4 uCam;
+        attribute vec3 aStart, aEnd, aMid, aAxis; attribute vec2 aUV; attribute float aDelay, aSpin;
+        varying vec2 vUv; varying float vFade;
+        vec3 rot(vec3 p, vec3 k, float a){ return p * cos(a) + cross(k, p) * sin(a) + k * dot(k, p) * (1.0 - cos(a)); }
         void main(){
-          float t = clamp((uP - aDelay) / 0.65, 0.0, 1.0);
-          t = t * t * (3.0 - 2.0 * t);
-          vec3 p = (1.0 - t) * (1.0 - t) * aStart + 2.0 * (1.0 - t) * t * aMid + t * t * aEnd;
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          gl_Position = projectionMatrix * mv;
-          gl_PointSize = uSize * uPR * (uDist / -mv.z);
+          float t = clamp((uTime - aDelay) / uTravel, 0.0, 1.0);
+          float e = t < .5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0;
+          vec3 end = (uCam * vec4(aEnd, 1.0)).xyz;
+          vec3 c = (1.0 - e) * (1.0 - e) * aStart + 2.0 * (1.0 - e) * e * aMid + e * e * end;
+          vec3 corner = rot(vec3(position.xy * uTile * mix(1.0, .35, e), 0.0), aAxis, aSpin * e);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(c + corner, 1.0);
+          vUv = aUV + uv * uCell;
+          vFade = 1.0 - smoothstep(.72, 1.0, t);
         }`,
       fragmentShader: `
-        uniform vec3 uColor; uniform float uOpacity;
+        uniform sampler2D uMap; varying vec2 vUv; varying float vFade;
         void main(){
-          vec2 c = gl_PointCoord - 0.5;
-          if (dot(c, c) > 0.25) discard;
-          gl_FragColor = vec4(uColor, uOpacity);
+          vec4 c = texture2D(uMap, vUv);
+          if (c.a * vFade < .02) discard;
+          gl_FragColor = vec4(c.rgb, c.a * vFade);
         }`
     });
-    const dots = new THREE.Points(geo, dotsMat);
-    dots.frustumCulled = false;
-    world.add(dots);
+    const pieces = new THREE.Mesh(geo, piecesMat);
+    pieces.frustumCulled = false;
+    pieces.renderOrder = 2;
+    world.add(pieces);
+    // when each piece has (nearly) landed, in landing order — drives how much of the camera is shown
+    const landTimes = Array.from(aDelay, d => d + T.travel * .8).sort((a, b) => a - b);
+    const done = T.hold + T.sweep + .12 + T.travel + .05;
 
     // slate, waiting above the screen
     const { g: slate, pivot } = buildSlate(img);
@@ -629,10 +659,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     slate.visible = false;
     world.add(slate);
 
-    // swap the flat logo for the dots
-    img.style.animation = 'none'; img.style.opacity = 1;
-    void img.offsetWidth;
-    img.style.transition = 'opacity .3s'; img.style.opacity = 0;
+    let swapped = false;                 // the flat logo is hidden the moment the pieces are drawn over it
 
     const t0 = performance.now();
     let finished = false;
@@ -645,22 +672,26 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
       if (intro.classList.contains('skip')) { cleanup(); return; }
       const t = (performance.now() - t0) / 1000;
 
-      // 1. dots morph
-      dotsMat.uniforms.uOpacity.value = prog(t, 0, .3) * (1 - prog(t, T.solidStart + .05, T.solidEnd + .05));
-      dotsMat.uniforms.uP.value = prog(t, T.morphStart, T.morphEnd);
-      dots.visible = t < T.solidEnd + .1;
-
-      // 2. camera turns solid, then swings to stare at the viewer
-      const solid = prog(t, T.solidStart, T.solidEnd);
-      camera3d.visible = solid > 0;
-      mats.forEach(m => { m.opacity = solid; m.transparent = solid < 1; m.depthWrite = solid > .5; });
+      // 2. camera turns to stare at the viewer (starts while the last pieces land)
       const turn = easeInOut(prog(t, T.turnStart, T.turnEnd));
       camera3d.rotation.set(lerp(.12, 0, turn), lerp(-.65, 0, turn), 0);
       camera3d.position.z = lerp(0, .6, turn);
+      camera3d.updateMatrixWorld(true);
+      iris.scale.setScalar(lerp(1, .72, easeInOut(prog(t, T.turnEnd - .2, T.stareEnd))));
+
+      // 1. logo pieces fly in; the camera is revealed just behind the landing front
+      piecesMat.uniforms.uTime.value = t;
+      piecesMat.uniforms.uCam.value.copy(camera3d.matrixWorld);
+      pieces.visible = t < done;
+      // landing front, in build-pose x (ends are sorted by x, so the k-th piece to land is the k-th from the left)
+      let landed = 0; while (landed < N && landTimes[landed] <= t) landed++;
+      const front = landed === 0 ? -1e3 : landed === N ? 1e3 : endX[landed - 1] + .15 * S;
+      clip.set(new THREE.Vector3(-1, 0, 0), front)
+          .applyMatrix4(new THREE.Matrix4().multiplyMatrices(camera3d.matrixWorld, buildPoseInv));
+      const built = landed / N;
       shadow.position.z = camera3d.position.z;
       shadow.scale.x = lerp(4.6, 3.2, turn) * S;          // shadow narrows as the rig turns lens-on
-      shadowMat.opacity = solid;
-      iris.scale.setScalar(lerp(1, .72, easeInOut(prog(t, T.turnEnd, T.stareEnd))));
+      shadowMat.opacity = easeInOut(built);
 
       // 3. slate drops in, then snaps
       const drop = prog(t, T.slateStart, T.slateEnd);
@@ -670,6 +701,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
       pivot.rotation.z = lerp(.55, 0, Math.pow(prog(t, T.snapStart, T.snapEnd), 2));
 
       renderer.render(scene, cam);
+      if (!swapped) { swapped = true; img.style.animation = 'none'; img.style.opacity = 0; }
 
       // 4. fade to homepage
       if (t > T.finish && !finished) {
