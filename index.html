@@ -127,7 +127,10 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 }
 </style>
 <script type="importmap">
-  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  } }
 </script>
 </head>
 
@@ -252,6 +255,8 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
      ============================================================ -->
 <script type="module">
   import * as THREE from 'three';
+  import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+  import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
   // ---------- TIMELINE (seconds after the logo has faded in) ----------
   const T = {
@@ -296,10 +301,10 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
   // top handle + monitor, V-mount battery and antennas at the back, rods and baseplate underneath.
   function buildCamera() {
     const g = new THREE.Group();
-    const body = new THREE.MeshStandardMaterial({ color: 0x222220, roughness: .6, metalness: .3 });
+    const body = new THREE.MeshStandardMaterial({ color: 0x232321, roughness: .55, metalness: .35 });
     const trim = new THREE.MeshStandardMaterial({ color: 0x3a3935, roughness: .4, metalness: .55 });
     const hood = new THREE.MeshStandardMaterial({ color: 0x161614, roughness: .65, metalness: .2, side: THREE.DoubleSide });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: .1, metalness: .7 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x050608, roughness: .05, metalness: .9 });
     const ring = new THREE.MeshStandardMaterial({ color: 0x8c8a7e, roughness: .3, metalness: .6 });
     const steel = new THREE.MeshStandardMaterial({ color: 0xb9b7ad, roughness: .25, metalness: .85 });
     const red = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: .45, metalness: .1 });
@@ -311,7 +316,8 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
       const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z + OZ); m.rotation.set(rx, ry, rz); g.add(m); return m;
     };
     const Z = Math.PI / 2;
-    const box = (w, h, d, mat, x, y, z) => add(new THREE.BoxGeometry(w, h, d), mat, x, y, z);
+    const box = (w, h, d, mat, x, y, z) =>                                              // boxes get softly rounded edges
+      add(new RoundedBoxGeometry(w, h, d, 3, Math.min(.06, Math.min(w, h, d) * .45)), mat, x, y, z);
     const tube = (r1, r2, len, mat, x, y, z, rx = Z, rz = 0, open = false) =>
       add(new THREE.CylinderGeometry(r1, r2, len, 40, 1, open), mat, x, y, z, rx, 0, rz);
 
@@ -403,66 +409,103 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
   }
 
   // ---------- the slate (clapperboard) with your logo on it ----------
+  const SLATE_INK = '#151514';
+
+  // black-and-cream diagonal stripes for the clapsticks
   function stripes(flip) {
-    const c = document.createElement('canvas'); c.width = 512; c.height = 64;
+    const W = 1024, H = 128, c = document.createElement('canvas'); c.width = W; c.height = H;
     const x = c.getContext('2d');
-    x.fillStyle = '#111110'; x.fillRect(0, 0, 512, 64);
+    x.fillStyle = SLATE_INK; x.fillRect(0, 0, W, H);
     x.fillStyle = PAPER;
-    for (let i = -1; i < 8; i++) {
-      const o = i * 72;
+    const step = 160, band = 80, lean = 70;
+    for (let o = -step; o < W + step; o += step) {
       x.beginPath();
-      if (flip) { x.moveTo(o, 0); x.lineTo(o + 36, 0); x.lineTo(o + 72, 64); x.lineTo(o + 36, 64); }
-      else { x.moveTo(o + 36, 0); x.lineTo(o + 72, 0); x.lineTo(o + 36, 64); x.lineTo(o, 64); }
+      if (flip) { x.moveTo(o, 0); x.lineTo(o + band, 0); x.lineTo(o + band + lean, H); x.lineTo(o + lean, H); }
+      else { x.moveTo(o + lean, 0); x.lineTo(o + lean + band, 0); x.lineTo(o + band, H); x.lineTo(o, H); }
       x.fill();
     }
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
   }
 
+  // the board face: logo, then ROLL / SCENE / TAKE, then DIRECTOR / CAMERA / DATE
   function boardTexture(logo) {
-    const W = 1024, H = 672, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const W = 2048, H = 1300, c = document.createElement('canvas'); c.width = W; c.height = H;
     const x = c.getContext('2d');
-    x.fillStyle = '#141412'; x.fillRect(0, 0, W, H);
-    // logo in chalk-white
+    x.fillStyle = SLATE_INK; x.fillRect(0, 0, W, H);
+    const glow = x.createRadialGradient(W * .45, H * .35, 0, W * .45, H * .35, W * .75);   // faint sheen
+    glow.addColorStop(0, 'rgba(255,255,255,.05)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = glow; x.fillRect(0, 0, W, H);
+
+    const M = 90, CREAM = 'rgba(238,235,217,', rows = [M, 440, 860, H - M];
+    x.strokeStyle = CREAM + '.55)'; x.lineWidth = 4;
+    const line = (x1, y1, x2, y2) => { x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke(); };
+    x.beginPath(); x.roundRect(M, M, W - 2 * M, H - 2 * M, 28); x.stroke();          // outer frame
+    line(M, rows[1], W - M, rows[1]); line(M, rows[2], W - M, rows[2]);
+    const third = (W - 2 * M) / 3;
+    [1, 2].forEach(i => { line(M + i * third, rows[1], M + i * third, rows[2]); line(M + i * third, rows[2], M + i * third, rows[3]); });
+
+    // logo in cream
     const lc = document.createElement('canvas'); lc.width = logo.naturalWidth; lc.height = logo.naturalHeight;
     const lx = lc.getContext('2d'); lx.drawImage(logo, 0, 0);
     lx.globalCompositeOperation = 'source-in'; lx.fillStyle = PAPER; lx.fillRect(0, 0, lc.width, lc.height);
-    const lw = W * .74, lh = lw * lc.height / lc.width;
-    x.drawImage(lc, (W - lw) / 2, 120 - lh / 2 + 20, lw, lh);
-    // chalk lines and fields
-    x.strokeStyle = 'rgba(238,235,217,.75)'; x.lineWidth = 4;
-    const line = (x1, y1, x2, y2) => { x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke(); };
-    line(40, 250, W - 40, 250); line(40, 470, W - 40, 470);
-    line(W / 3, 250, W / 3, 470); line(W * 2 / 3, 250, W * 2 / 3, 470); line(W / 2, 470, W / 2, H - 30);
-    x.fillStyle = 'rgba(238,235,217,.7)';
-    x.font = '600 28px "Inter Tight", Arial, sans-serif';
-    [['ROLL', 0], ['SCENE', 1], ['TAKE', 2]].forEach(([l, i]) => x.fillText(l, 60 + i * W / 3, 295));
-    x.fillText('DIRECTOR', 60, 515); x.fillText('DATE', W / 2 + 20, 515);
-    x.fillStyle = PAPER;
-    x.font = '700 92px "Inter Tight", Arial, sans-serif';
-    [['01', 0], ['1A', 1], ['1', 2]].forEach(([v, i]) => x.fillText(v, 60 + i * W / 3, 420));
-    x.font = '600 46px "Inter Tight", Arial, sans-serif';
-    x.fillText('CHECK THE GATE', 60, 600);
+    let lw = W * .62, lh = lw * lc.height / lc.width;
+    if (lh > 230) { lh = 230; lw = lh * lc.width / lc.height; }
+    x.drawImage(lc, (W - lw) / 2, (rows[0] + rows[1]) / 2 - lh / 2, lw, lh);
+
     const d = new Date();
-    x.fillText(`${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`, W / 2 + 20, 600);
+    const cells = [
+      ['ROLL', '01', 0, 1], ['SCENE', '1A', 1, 1], ['TAKE', '1', 2, 1],
+      ['DIRECTOR', 'CHECK THE GATE', 0, 2], ['CAMERA', 'A', 1, 2],
+      ['DATE', `${d.getMonth() + 1}.${d.getDate()}.${String(d.getFullYear()).slice(2)}`, 2, 2]
+    ];
+    x.textBaseline = 'alphabetic';
+    for (const [label, value, col, row] of cells) {
+      const left = M + col * third + 48, top = rows[row];
+      x.fillStyle = CREAM + '.6)';
+      x.font = '600 40px "Inter Tight", Arial, sans-serif';
+      if ('letterSpacing' in x) x.letterSpacing = '6px';
+      x.fillText(label, left, top + 84);
+      x.fillStyle = PAPER;
+      if ('letterSpacing' in x) x.letterSpacing = '0px';
+      let size = row === 1 ? 210 : 96;                                                // shrink long values to fit
+      do x.font = `700 ${size}px "Inter Tight", Arial, sans-serif`; while (x.measureText(value).width > third - 96 && --size > 24);
+      x.fillText(value, left, rows[row + 1] - (row === 1 ? 70 : 110));
+    }
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
   }
 
   function buildSlate(logo) {
     const g = new THREE.Group();
-    const W = 3.2, H = 2.1, D = .08, BAR = .3;
-    const dark = new THREE.MeshStandardMaterial({ color: 0x141412, roughness: .7 });
-    const face = new THREE.MeshStandardMaterial({ map: boardTexture(logo), roughness: .8 });
-    const s1 = new THREE.MeshStandardMaterial({ map: stripes(false), roughness: .6 });
-    const s2 = new THREE.MeshStandardMaterial({ map: stripes(true), roughness: .6 });
-    const metal = new THREE.MeshStandardMaterial({ color: 0x9a978a, roughness: .3, metalness: .8 });
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(W, H, D), [dark, dark, dark, dark, face, dark]));
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(W, BAR, D + .01), [dark, dark, dark, dark, s1, dark]);
-    bar.position.y = H / 2 + BAR / 2; g.add(bar);
-    const pivot = new THREE.Group(); pivot.position.set(-W / 2, H / 2 + BAR, 0); g.add(pivot);
-    const stick = new THREE.Mesh(new THREE.BoxGeometry(W, BAR, D + .01), [dark, dark, dark, dark, s2, dark]);
-    stick.position.set(W / 2, BAR / 2, 0); pivot.add(stick);
-    const hinge = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, D + .08, 16), metal);
-    hinge.rotation.x = Math.PI / 2; hinge.position.set(-W / 2 + .07, H / 2 + BAR, 0); g.add(hinge);
+    const W = 3.2, H = 2.05, D = .09, BAR = .32, GAP = .015;
+    // satin acrylic board, like a real camera slate
+    const dark = new THREE.MeshPhysicalMaterial({ color: 0x151514, roughness: .42, clearcoat: .6, clearcoatRoughness: .25 });
+    const face = new THREE.MeshPhysicalMaterial({ map: boardTexture(logo), roughness: .42, clearcoat: .6, clearcoatRoughness: .25 });
+    const s1 = new THREE.MeshPhysicalMaterial({ map: stripes(false), roughness: .45, clearcoat: .5 });
+    const s2 = new THREE.MeshPhysicalMaterial({ map: stripes(true), roughness: .45, clearcoat: .5 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0xb4b1a6, roughness: .22, metalness: .9 });
+
+    // board: rounded slab with the printed face set on its front
+    g.add(new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 4, .07), dark));
+    const faceMesh = new THREE.Mesh(new THREE.PlaneGeometry(W - .14, H - .14), face);
+    faceMesh.position.z = D / 2 + .002; g.add(faceMesh);
+
+    // a clapstick: rounded bar with stripes on its front
+    const stick = (mat) => {
+      const s = new THREE.Group();
+      s.add(new THREE.Mesh(new RoundedBoxGeometry(W, BAR, D, 3, .04), dark));
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(W - .08, BAR - .08), mat);
+      p.position.z = D / 2 + .002; s.add(p);
+      return s;
+    };
+    const bar = stick(s1); bar.position.y = H / 2 + GAP + BAR / 2; g.add(bar);           // fixed lower stick
+    const pivot = new THREE.Group(); pivot.position.set(-W / 2, H / 2 + GAP * 2 + BAR, 0); g.add(pivot);
+    const top = stick(s2); top.position.set(W / 2, BAR / 2, 0); pivot.add(top);           // hinged upper stick
+
+    // hinge pin with a screw head on the front
+    const hinge = new THREE.Mesh(new THREE.CylinderGeometry(.075, .075, D + .1, 24), metal);
+    hinge.rotation.x = Math.PI / 2; hinge.position.set(-W / 2 + .1, H / 2 + GAP * 2 + BAR, 0); g.add(hinge);
+    const screw = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .02, 20), metal);
+    screw.rotation.x = Math.PI / 2; screw.position.set(-W / 2 + .1, H / 2 + GAP * 2 + BAR, D / 2 + .06); g.add(screw);
     return { g, pivot };
   }
 
@@ -483,6 +526,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight, false);
+    renderer.toneMapping = THREE.NeutralToneMapping;   // keeps the cream/black true while softening highlights
     intro.classList.add('cine');
 
     const scene = new THREE.Scene();
@@ -494,9 +538,12 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     const px = visH / innerHeight;          // screen pixels → 3D units
     const S = Math.min(1, visW / 6.2);      // shrink everything on narrow screens
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8778, 1.3));
-    const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(4, 6, 8); scene.add(key);
-    const rim = new THREE.DirectionalLight(0xffffff, 1.6); rim.position.set(-6, 3, -4); scene.add(rim);
+    // studio lighting: a soft "photo studio" environment for reflections, plus a key and rim light
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture;
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8778, .4));
+    const key = new THREE.DirectionalLight(0xfff6e8, 1.8); key.position.set(4, 6, 8); scene.add(key);
+    const rim = new THREE.DirectionalLight(0xffffff, 1.4); rim.position.set(-6, 3, -4); scene.add(rim);
 
     const world = new THREE.Group(); scene.add(world);
 
@@ -508,6 +555,18 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     world.add(camera3d);
     mats.forEach(m => { m.transparent = true; m.opacity = 0; });
     camera3d.visible = false;
+
+    // soft shadow on the "floor" under the camera
+    const sc = document.createElement('canvas'); sc.width = sc.height = 256;
+    const sx = sc.getContext('2d'), grad = sx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(13,13,12,.55)'); grad.addColorStop(.5, 'rgba(13,13,12,.22)'); grad.addColorStop(1, 'rgba(13,13,12,0)');
+    sx.fillStyle = grad; sx.fillRect(0, 0, 256, 256);
+    const shadowMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), transparent: true, depthWrite: false, opacity: 0 });
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(0, -1.12 * S, 0);
+    shadow.scale.set(4.6 * S, 3.4 * S, 1);
+    world.add(shadow);
 
     // dots: start on the logo, end on the camera
     const rect = img.getBoundingClientRect();
@@ -579,7 +638,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     let finished = false;
     function cleanup() {
       renderer.setAnimationLoop(null);
-      setTimeout(() => { renderer.dispose(); cvs.remove(); }, 1000);
+      setTimeout(() => { pmrem.dispose(); renderer.dispose(); cvs.remove(); }, 1000);
     }
 
     renderer.setAnimationLoop(() => {
@@ -598,6 +657,9 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
       const turn = easeInOut(prog(t, T.turnStart, T.turnEnd));
       camera3d.rotation.set(lerp(.12, 0, turn), lerp(-.65, 0, turn), 0);
       camera3d.position.z = lerp(0, .6, turn);
+      shadow.position.z = camera3d.position.z;
+      shadow.scale.x = lerp(4.6, 3.2, turn) * S;          // shadow narrows as the rig turns lens-on
+      shadowMat.opacity = solid;
       iris.scale.setScalar(lerp(1, .72, easeInOut(prog(t, T.turnEnd, T.stareEnd))));
 
       // 3. slate drops in, then snaps
