@@ -267,8 +267,8 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     turnStart: 1.55,  turnEnd: 2.45,    // lens swings to face the viewer (while the last pieces land)
     stareEnd: 2.7,                      // iris tightens
     slateStart: 2.4,  slateEnd: 2.8,    // slate drops in as the turn settles
-    snapStart: 2.85,  snapEnd: 2.93,    // clapstick snaps shut
-    finish: 2.95                        // fade to homepage right on the snap (whole intro ≈ 5s)
+    snapStart: 2.84,  snapEnd: 2.96,    // clapstick snaps shut
+    finish: 2.97                        // fade to homepage right on the snap (whole intro ≈ 5s)
   };
 
   const intro = document.getElementById('intro');
@@ -484,10 +484,10 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     const g = new THREE.Group();
     const W = 3.2, H = 2.05, D = .09, BAR = .32, GAP = .015;
     // satin acrylic board, like a real camera slate
-    const dark = new THREE.MeshPhysicalMaterial({ color: 0x151514, roughness: .42, clearcoat: .6, clearcoatRoughness: .25 });
-    const face = new THREE.MeshPhysicalMaterial({ map: boardTexture(logo), roughness: .42, clearcoat: .6, clearcoatRoughness: .25 });
-    const s1 = new THREE.MeshPhysicalMaterial({ map: stripes(false), roughness: .45, clearcoat: .5 });
-    const s2 = new THREE.MeshPhysicalMaterial({ map: stripes(true), roughness: .45, clearcoat: .5 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x151514, roughness: .36, metalness: .1 });
+    const face = new THREE.MeshStandardMaterial({ map: boardTexture(logo), roughness: .36, metalness: .1 });
+    const s1 = new THREE.MeshStandardMaterial({ map: stripes(false), roughness: .4, metalness: .1 });
+    const s2 = new THREE.MeshStandardMaterial({ map: stripes(true), roughness: .4, metalness: .1 });
     const metal = new THREE.MeshStandardMaterial({ color: 0xb4b1a6, roughness: .22, metalness: .9 });
 
     // board: rounded slab with the printed face set on its front
@@ -659,6 +659,12 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     slate.visible = false;
     world.add(slate);
 
+    // upload every texture and build every shader now, so nothing stalls the first time it appears
+    slate.visible = true;
+    renderer.compile(scene, cam);
+    scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.map && renderer.initTexture(m.map)); });
+    slate.visible = false;
+
     let swapped = false;                 // the flat logo is hidden the moment the pieces are drawn over it
 
     const t0 = performance.now();
@@ -706,6 +712,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
       // 4. fade to homepage
       if (t > T.finish && !finished) {
         finished = true;
+        renderer.setAnimationLoop(null);   // last frame stays on screen; frees the GPU for the homepage
         intro.classList.add('done');
         setTimeout(cleanup, 1050);
       }
@@ -793,7 +800,9 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
       if (!canvas.isConnected) { renderer.setAnimationLoop(null); return; } // reel started playing
-      if (visible) update(clock.getElapsedTime());
+      const intro = document.getElementById('intro');
+      const introPlaying = intro.classList.contains('cine') && !intro.classList.contains('done') && !intro.classList.contains('skip');
+      if (visible && !introPlaying) update(clock.getElapsedTime());
     });
   }
 </script>
