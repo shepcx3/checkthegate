@@ -42,19 +42,19 @@ h2{font-size:15px;font-weight:500;letter-spacing:0;color:var(--muted);margin-bot
 .intro{
   position:fixed;inset:0;z-index:100;background:var(--paper);
   display:grid;place-items:center;cursor:pointer;
-  animation:intro-out 1.2s ease 3.2s forwards;   /* simple fallback */
+  animation:intro-out 1s ease 4s forwards;   /* simple fallback */
 }
 .intro img{
   width:min(62vw, 560px);opacity:0;
-  animation:logo-in 1s ease .3s forwards;
+  animation:logo-in .7s ease .2s forwards;
 }
 .intro canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .intro .hint{
   position:absolute;bottom:24px;left:0;right:0;text-align:center;
-  font-size:13px;color:var(--muted);opacity:0;animation:logo-in .6s ease 1.6s forwards;
+  font-size:13px;color:var(--muted);opacity:0;animation:logo-in .6s ease 1s forwards;
 }
 .intro.cine{animation:none}                         /* 3D sequence takes over */
-.intro.done{animation:intro-out .9s ease forwards}  /* 3D sequence finished */
+.intro.done{animation:intro-out 1s ease forwards}  /* 3D sequence finished */
 .intro.skip{animation:intro-out .4s ease forwards}  /* visitor clicked to skip */
 @keyframes logo-in{to{opacity:1}}
 @keyframes intro-out{to{opacity:0;visibility:hidden}}
@@ -255,14 +255,13 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
   // ---------- TIMELINE (seconds after the logo has faded in) ----------
   const T = {
-    morphStart: 0.35, morphEnd: 2.15,   // dots fly from logo to camera
-    solidStart: 2.0,  solidEnd: 2.45,   // camera turns solid
-    turnStart: 2.4,   turnEnd: 3.2,     // lens swings to face the viewer
-    stareEnd: 3.9,                      // lens holds its stare (iris tightens)
-    slateStart: 3.9,  slateEnd: 4.35,   // slate drops in
-    snapStart: 4.65,  snapEnd: 4.73,    // clapstick snaps shut
-    shakeEnd: 5.05,
-    finish: 5.3                         // fade to homepage
+    morphStart: 0.2,  morphEnd: 1.4,    // dots fly from logo to camera
+    solidStart: 1.3,  solidEnd: 1.65,   // camera turns solid
+    turnStart: 1.6,   turnEnd: 2.2,     // lens swings to face the viewer
+    stareEnd: 2.45,                     // lens holds its stare (iris tightens)
+    slateStart: 2.45, slateEnd: 2.85,   // slate drops in
+    snapStart: 3.0,   snapEnd: 3.08,    // clapstick snaps shut
+    finish: 3.2                         // fade to homepage (whole intro ≈ 5s)
   };
 
   const intro = document.getElementById('intro');
@@ -292,43 +291,80 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     return { pts: out, coverage: ink.length / (c.width * c.height) };
   }
 
-  // ---------- the film camera, built from simple shapes. Lens points toward the viewer (+z) ----------
+  // ---------- the cinema camera (modeled on an ARRI ALEXA 35 rig), built from simple shapes ----------
+  // Lens points toward the viewer (+z): matte box and zoom lens up front, EVF on the left,
+  // top handle + monitor, V-mount battery and antennas at the back, rods and baseplate underneath.
   function buildCamera() {
     const g = new THREE.Group();
-    const body = new THREE.MeshStandardMaterial({ color: 0x1b1b19, roughness: .55, metalness: .25 });
-    const trim = new THREE.MeshStandardMaterial({ color: 0x3d3c36, roughness: .4, metalness: .5 });
-    const hood = new THREE.MeshStandardMaterial({ color: 0x1b1b19, roughness: .6, metalness: .2, side: THREE.DoubleSide });
+    const body = new THREE.MeshStandardMaterial({ color: 0x222220, roughness: .6, metalness: .3 });
+    const trim = new THREE.MeshStandardMaterial({ color: 0x3a3935, roughness: .4, metalness: .55 });
+    const hood = new THREE.MeshStandardMaterial({ color: 0x161614, roughness: .65, metalness: .2, side: THREE.DoubleSide });
     const glass = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: .1, metalness: .7 });
     const ring = new THREE.MeshStandardMaterial({ color: 0x8c8a7e, roughness: .3, metalness: .6 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0xb9b7ad, roughness: .25, metalness: .85 });
+    const red = new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: .45, metalness: .1 });
+    const marks = new THREE.MeshStandardMaterial({ color: 0xd9d34a, roughness: .5, metalness: .1 });
+    const screen = new THREE.MeshStandardMaterial({ color: 0x2b3a44, roughness: .15, metalness: .4 });
     const glint = new THREE.MeshBasicMaterial({ color: 0xf4f1e2 });
+    const OZ = -.75;                                    // shift the rig back so it turns around its middle
     const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
-      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m;
+      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z + OZ); m.rotation.set(rx, ry, rz); g.add(m); return m;
     };
     const Z = Math.PI / 2;
-    add(new THREE.BoxGeometry(1.5, 1.25, 2.1), body, 0, 0, 0);                         // body
-    add(new THREE.CylinderGeometry(.44, .44, .5, 48), trim, 0, 0, 1.3, Z);              // lens mount
-    add(new THREE.CylinderGeometry(.38, .44, .6, 48), body, 0, 0, 1.8, Z);              // lens barrel
-    add(new THREE.CylinderGeometry(.62, .4, .4, 48, 1, true), hood, 0, 0, 2.28, Z);     // lens hood
-    add(new THREE.CircleGeometry(.38, 48), glass, 0, 0, 2.1);                           // front glass
-    const iris = add(new THREE.RingGeometry(.22, .27, 48), ring, 0, 0, 2.11);           // inner element
-    add(new THREE.CircleGeometry(.06, 20), glint, .12, .13, 2.12);                      // light glint
-    add(new THREE.CylinderGeometry(.72, .72, .3, 48), body, 0, 1.25, .5, 0, 0, Z);      // front film reel
-    add(new THREE.CylinderGeometry(.72, .72, .3, 48), body, 0, 1.25, -.75, 0, 0, Z);    // back film reel
-    add(new THREE.CylinderGeometry(.16, .16, .34, 24), trim, 0, 1.25, .5, 0, 0, Z);     // reel hubs
-    add(new THREE.CylinderGeometry(.16, .16, .34, 24), trim, 0, 1.25, -.75, 0, 0, Z);
-    add(new THREE.CylinderGeometry(.14, .14, .55, 24), trim, -.5, .35, -1.3, Z);        // eyepiece
-    add(new THREE.BoxGeometry(.26, .55, .95), trim, .88, -.1, -.2);                     // side motor
-    add(new THREE.BoxGeometry(.9, .26, .9), trim, 0, -.76, 0);                          // tripod head
-    const up = new THREE.Vector3(0, 1, 0);
-    for (let k = 0; k < 3; k++) {                                                       // tripod legs
-      const a = k * Math.PI * 2 / 3 + .5;
-      const dir = new THREE.Vector3(Math.sin(a) * .38, -1, Math.cos(a) * .38).normalize();
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.05, .04, 2.6, 12), trim);
-      leg.quaternion.setFromUnitVectors(up, dir);
-      leg.position.set(0, -.88, 0).addScaledVector(dir, 1.3);
-      g.add(leg);
+    const box = (w, h, d, mat, x, y, z) => add(new THREE.BoxGeometry(w, h, d), mat, x, y, z);
+    const tube = (r1, r2, len, mat, x, y, z, rx = Z, rz = 0, open = false) =>
+      add(new THREE.CylinderGeometry(r1, r2, len, 40, 1, open), mat, x, y, z, rx, 0, rz);
+
+    // camera body + side details
+    box(1.25, 1.3, 1.7, body, 0, 0, 0);                                                // body
+    box(.03, .38, .55, screen, .64, .28, .15);                                          // side status screen
+    tube(.08, .08, .05, red, .65, -.33, .55, 0, Z);                                     // REC button
+    tube(.07, .07, .05, trim, .65, -.33, .2, 0, Z);                                     // second button
+    box(1.05, 1.05, .12, trim, 0, 0, .9);                                               // front plate (cage)
+
+    // zoom lens with focus/zoom rings and yellow scale marks
+    tube(.4, .4, .35, trim, 0, 0, 1.12);                                                // lens mount
+    tube(.34, .36, 1.5, body, 0, 0, 1.95);                                              // lens barrel
+    for (const z of [1.45, 1.95, 2.4]) {
+      tube(.4, .4, .2, trim, 0, 0, z);                                                  // gear rings
+      tube(.405, .405, .025, marks, 0, 0, z + .06);                                     // scale marks
     }
-    return { g, iris, mats: [body, trim, hood, glass, ring, glint] };
+    tube(.42, .38, .15, body, 0, 0, 2.75);                                              // front of lens
+    add(new THREE.CircleGeometry(.36, 48), glass, 0, 0, 2.83);                          // front glass
+    const iris = add(new THREE.RingGeometry(.2, .26, 48), ring, 0, 0, 2.84);            // inner element
+    add(new THREE.CircleGeometry(.05, 20), glint, .12, .13, 2.85);                      // light glint
+
+    // matte box (open frame around the lens)
+    box(1.3, .08, .55, hood, 0, .58, 3.05);  box(1.3, .08, .55, hood, 0, -.58, 3.05);   // top / bottom
+    box(.08, 1.24, .55, hood, -.65, 0, 3.05); box(.08, 1.24, .55, hood, .65, 0, 3.05);  // sides
+    box(.04, .9, .45, hood, -.72, .05, 3.3); box(.04, .9, .45, hood, .72, .05, 3.3);    // side flags
+
+    // top handle and on-board monitor
+    box(.16, .1, 1.7, trim, 0, .95, .15);                                               // top handle
+    box(.12, .3, .12, trim, 0, .8, -.5); box(.12, .3, .12, trim, 0, .8, .75);           // handle posts
+    box(.1, .3, .1, trim, 0, 1.15, -.2);                                                // monitor mount
+    box(1.05, .66, .07, body, 0, 1.6, -.2);                                             // monitor
+    box(.95, .56, .01, screen, 0, 1.6, -.24);                                           // monitor screen (faces operator)
+
+    // electronic viewfinder on the left, eyepiece toward the back
+    box(.42, .45, .65, body, -.95, .85, .7);                                            // EVF housing
+    box(.32, .08, .08, trim, -.7, .72, .7);                                             // EVF arm
+    tube(.15, .15, .45, trim, -.95, .85, .2);                                           // eyepiece
+    tube(.24, .17, .14, hood, -.95, .85, -.08, Z, 0, true);                             // rubber eyecup
+
+    // V-mount battery, antennas
+    box(1.0, 1.1, .38, body, 0, -.05, -1.05);                                           // battery
+    box(.02, .45, .26, red, .51, .1, -1.05);                                            // battery label
+    tube(.025, .025, .75, hood, .45, 1.0, -.7, 0);                                      // antennas
+    tube(.025, .025, .75, hood, -.45, 1.0, -.7, 0);
+
+    // baseplate, shoulder pad and 15mm rods
+    box(1.0, .14, 2.0, trim, 0, -.72, 0);                                               // baseplate
+    box(.7, .22, 1.0, body, 0, -.9, -.45);                                              // shoulder pad
+    tube(.05, .05, 2.6, steel, .22, -.72, 1.6);                                         // rods
+    tube(.05, .05, 2.6, steel, -.22, -.72, 1.6);
+    box(.7, .2, .2, trim, 0, -.6, 2.6);                                                 // lens support
+    return { g, iris, mats: [body, trim, hood, glass, ring, steel, red, marks, screen, glint] };
   }
 
   // ---------- pick random points on the camera's surface (where the dots land) ----------
@@ -436,9 +472,9 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     if (!img.complete) { try { await img.decode(); } catch (e) { return; } }
     try { await document.fonts.ready; } catch (e) {}
     // wait until the logo has fully faded in
-    const wait = 1500 - performance.now();
+    const wait = 900 - performance.now();
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    if (performance.now() > 2900 || intro.classList.contains('skip')) return; // too late; simple fade plays
+    if (performance.now() > 1800 || intro.classList.contains('skip')) return; // too late; simple fade plays
 
     const N = innerWidth < 700 ? 5000 : 8000;
     let logo;
@@ -462,12 +498,12 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(4, 6, 8); scene.add(key);
     const rim = new THREE.DirectionalLight(0xffffff, 1.6); rim.position.set(-6, 3, -4); scene.add(rim);
 
-    const world = new THREE.Group(); scene.add(world); // shaken when the slate snaps
+    const world = new THREE.Group(); scene.add(world);
 
     // camera, posed at a 3/4 angle for the morph
     const { g: camera3d, iris, mats } = buildCamera();
     camera3d.scale.setScalar(S);
-    camera3d.position.set(0, .25 * S, 0);
+    camera3d.position.set(0, -.1 * S, 0);
     camera3d.rotation.set(.12, -.65, 0);
     world.add(camera3d);
     mats.forEach(m => { m.transparent = true; m.opacity = 0; });
@@ -571,17 +607,13 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
       slate.rotation.z = lerp(.3, -.04, easeOutBack(drop));
       pivot.rotation.z = lerp(.55, 0, Math.pow(prog(t, T.snapStart, T.snapEnd), 2));
 
-      // little jolt when it snaps
-      const shake = t > T.snapEnd ? 1 - prog(t, T.snapEnd, T.shakeEnd) : 0;
-      world.position.set((Math.random() - .5) * .12 * shake * S, (Math.random() - .5) * .12 * shake * S, 0);
-
       renderer.render(scene, cam);
 
       // 4. fade to homepage
       if (t > T.finish && !finished) {
         finished = true;
         intro.classList.add('done');
-        setTimeout(cleanup, 950);
+        setTimeout(cleanup, 1050);
       }
     });
   }
