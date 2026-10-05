@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Check the Gate Productions | Film & video in Toronto, Ontario</title>
-<meta name="description" content="Check the Gate Productions is a creative production company representing a world-class roster of directors, photographers, and multidisciplinary artists. We believe stories don't just entertain. They carry culture forward. We check the gate to ensure every frame, voice, and idea is captured with intention, now and for the future.">
+<title>Check the Gate Productions | Film & video in Kingston, Ontario</title>
+<meta name="description" content="Check the Gate is a film and video production company in Kingston, Ontario. Brand films, documentaries, and commercials.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;700&display=swap" rel="stylesheet">
@@ -34,21 +34,28 @@ h1,h2,h3{font-weight:700;letter-spacing:-.03em;line-height:1.05}
 h2{font-size:15px;font-weight:500;letter-spacing:0;color:var(--muted);margin-bottom:28px}
 
 /* ============================================================
-   INTRO — logo on cream, then fades into the homepage.
-   Timing: logo fades in for 1s, holds, then the whole
-   screen fades out starting at 2.4s. Change the numbers
-   in the two "animation" lines below to speed it up or slow it down.
+   INTRO — logo on cream → letters morph into a 3D film camera
+   → a slate snaps → fades into the homepage.
+   The 3D part is in the "INTRO ANIMATION" script near the bottom.
+   If 3D can't load, the simple logo fade below plays instead.
    ============================================================ */
 .intro{
   position:fixed;inset:0;z-index:100;background:var(--paper);
   display:grid;place-items:center;cursor:pointer;
-  animation:intro-out 1.2s ease 2.4s forwards;
+  animation:intro-out 1.2s ease 3.2s forwards;   /* simple fallback */
 }
 .intro img{
   width:min(62vw, 560px);opacity:0;
   animation:logo-in 1s ease .3s forwards;
 }
-.intro.skip{animation:intro-out .4s ease forwards}
+.intro canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.intro .hint{
+  position:absolute;bottom:24px;left:0;right:0;text-align:center;
+  font-size:13px;color:var(--muted);opacity:0;animation:logo-in .6s ease 1.6s forwards;
+}
+.intro.cine{animation:none}                         /* 3D sequence takes over */
+.intro.done{animation:intro-out .9s ease forwards}  /* 3D sequence finished */
+.intro.skip{animation:intro-out .4s ease forwards}  /* visitor clicked to skip */
 @keyframes logo-in{to{opacity:1}}
 @keyframes intro-out{to{opacity:0;visibility:hidden}}
 
@@ -119,6 +126,9 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
   .intro{animation:intro-out .01s linear 1.2s forwards}
 }
 </style>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+</script>
 </head>
 
 <body>
@@ -126,6 +136,8 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 <!-- ===================== INTRO (click anywhere to skip) ===================== -->
 <div class="intro" id="intro" aria-hidden="true">
   <img src="logo.png" alt="">
+  <canvas id="intro3d"></canvas>
+  <span class="hint">Click to skip</span>
 </div>
 
 <header class="wrap top">
@@ -141,8 +153,8 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
 <!-- ===================== HERO + REEL ===================== -->
 <div class="wrap hero">
-  <h1>Film and video production in Toronto, Ontario.</h1>
-  <p>Check the Gate Productions is a creative production company representing a world-class roster of directors, photographers, and multidisciplinary artists. We believe stories don't just entertain. They carry culture forward. We check the gate to ensure every frame, voice, and idea is captured with intention, now and for the future.</p>
+  <h1>Film and video production in Kingston, Ontario.</h1>
+  <p>Brand films, documentaries, and commercials, made with one more look before we move on.</p>
   <div class="player" id="player">
     <canvas id="bars" aria-hidden="true"></canvas>
     <div class="player-ui" id="player-ui"></div>
@@ -170,7 +182,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
     <div class="about-text">
       <p class="big">On a film set, "check the gate" is the last look through the camera before the shot is called done. We work that way on everything.</p>
       <div>
-        <p>Check the Gate is a production company based in Toronto, Ontario. We handle a project from the first idea to the final file: writing, shooting, editing, color, and sound.</p>
+        <p>Check the Gate is a production company based in Kingston, Ontario. We handle a project from the first idea to the final file: writing, shooting, editing, color, and sound.</p>
         <p>Crews are sized to the job, from a two-person documentary team to a full commercial unit. You see cuts along the way, and nothing ships until we've checked it twice.</p>
       </div>
     </div>
@@ -190,7 +202,7 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
 <footer>
   <div class="wrap">
-    <span>Check the Gate Productions, Toronto, Ontario</span>
+    <span>Check the Gate Productions, Kingston, Ontario</span>
     <span>© <span id="year"></span></span>
   </div>
 </footer>
@@ -231,12 +243,355 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
 
 <!-- ============================================================
+     INTRO ANIMATION (Three.js)
+     1. Your logo breaks into dots that fly together into a film camera
+     2. The camera turns so its lens looks right at the viewer
+     3. A slate with your logo drops in and snaps shut
+     4. Everything fades to the homepage
+     Timing lives in the "TIMELINE" numbers below (in seconds).
+     ============================================================ -->
+<script type="module">
+  import * as THREE from 'three';
+
+  // ---------- TIMELINE (seconds after the logo has faded in) ----------
+  const T = {
+    morphStart: 0.35, morphEnd: 2.15,   // dots fly from logo to camera
+    solidStart: 2.0,  solidEnd: 2.45,   // camera turns solid
+    turnStart: 2.4,   turnEnd: 3.2,     // lens swings to face the viewer
+    stareEnd: 3.9,                      // lens holds its stare (iris tightens)
+    slateStart: 3.9,  slateEnd: 4.35,   // slate drops in
+    snapStart: 4.65,  snapEnd: 4.73,    // clapstick snaps shut
+    shakeEnd: 5.05,
+    finish: 5.3                         // fade to homepage
+  };
+
+  const intro = document.getElementById('intro');
+  const img = intro.querySelector('img');
+  const cvs = document.getElementById('intro3d');
+  const INK = 0x0d0d0c, PAPER = '#eeebd9';
+
+  const clamp01 = x => Math.min(1, Math.max(0, x));
+  const prog = (t, a, b) => clamp01((t - a) / (b - a));
+  const easeInOut = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  const easeOutBack = x => 1 + 2.4 * Math.pow(x - 1, 3) + 1.4 * Math.pow(x - 1, 2);
+  const lerp = (a, b, x) => a + (b - a) * x;
+
+  // ---------- read the logo's pixels so dots can start exactly where the letters are ----------
+  function sampleLogo(image, count) {
+    const c = document.createElement('canvas');
+    c.width = image.naturalWidth; c.height = image.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, c.width, c.height).data; // fails if opened as a local file
+    const ink = [];
+    for (let y = 0; y < c.height; y += 1)
+      for (let x = 0; x < c.width; x += 1)
+        if (data[(y * c.width + x) * 4 + 3] > 140) ink.push([x / c.width, y / c.height]);
+    const out = [];
+    for (let i = 0; i < count; i++) out.push(ink[(Math.random() * ink.length) | 0]);
+    return { pts: out, coverage: ink.length / (c.width * c.height) };
+  }
+
+  // ---------- the film camera, built from simple shapes. Lens points toward the viewer (+z) ----------
+  function buildCamera() {
+    const g = new THREE.Group();
+    const body = new THREE.MeshStandardMaterial({ color: 0x1b1b19, roughness: .55, metalness: .25 });
+    const trim = new THREE.MeshStandardMaterial({ color: 0x3d3c36, roughness: .4, metalness: .5 });
+    const hood = new THREE.MeshStandardMaterial({ color: 0x1b1b19, roughness: .6, metalness: .2, side: THREE.DoubleSide });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: .1, metalness: .7 });
+    const ring = new THREE.MeshStandardMaterial({ color: 0x8c8a7e, roughness: .3, metalness: .6 });
+    const glint = new THREE.MeshBasicMaterial({ color: 0xf4f1e2 });
+    const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
+      const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m;
+    };
+    const Z = Math.PI / 2;
+    add(new THREE.BoxGeometry(1.5, 1.25, 2.1), body, 0, 0, 0);                         // body
+    add(new THREE.CylinderGeometry(.44, .44, .5, 48), trim, 0, 0, 1.3, Z);              // lens mount
+    add(new THREE.CylinderGeometry(.38, .44, .6, 48), body, 0, 0, 1.8, Z);              // lens barrel
+    add(new THREE.CylinderGeometry(.62, .4, .4, 48, 1, true), hood, 0, 0, 2.28, Z);     // lens hood
+    add(new THREE.CircleGeometry(.38, 48), glass, 0, 0, 2.1);                           // front glass
+    const iris = add(new THREE.RingGeometry(.22, .27, 48), ring, 0, 0, 2.11);           // inner element
+    add(new THREE.CircleGeometry(.06, 20), glint, .12, .13, 2.12);                      // light glint
+    add(new THREE.CylinderGeometry(.72, .72, .3, 48), body, 0, 1.25, .5, 0, 0, Z);      // front film reel
+    add(new THREE.CylinderGeometry(.72, .72, .3, 48), body, 0, 1.25, -.75, 0, 0, Z);    // back film reel
+    add(new THREE.CylinderGeometry(.16, .16, .34, 24), trim, 0, 1.25, .5, 0, 0, Z);     // reel hubs
+    add(new THREE.CylinderGeometry(.16, .16, .34, 24), trim, 0, 1.25, -.75, 0, 0, Z);
+    add(new THREE.CylinderGeometry(.14, .14, .55, 24), trim, -.5, .35, -1.3, Z);        // eyepiece
+    add(new THREE.BoxGeometry(.26, .55, .95), trim, .88, -.1, -.2);                     // side motor
+    add(new THREE.BoxGeometry(.9, .26, .9), trim, 0, -.76, 0);                          // tripod head
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let k = 0; k < 3; k++) {                                                       // tripod legs
+      const a = k * Math.PI * 2 / 3 + .5;
+      const dir = new THREE.Vector3(Math.sin(a) * .38, -1, Math.cos(a) * .38).normalize();
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.05, .04, 2.6, 12), trim);
+      leg.quaternion.setFromUnitVectors(up, dir);
+      leg.position.set(0, -.88, 0).addScaledVector(dir, 1.3);
+      g.add(leg);
+    }
+    return { g, iris, mats: [body, trim, hood, glass, ring, glint] };
+  }
+
+  // ---------- pick random points on the camera's surface (where the dots land) ----------
+  function sampleSurface(group, count) {
+    group.updateMatrixWorld(true);
+    const tris = [], areas = [];
+    let total = 0;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    group.traverse(m => {
+      if (!m.isMesh) return;
+      const pos = m.geometry.attributes.position, idx = m.geometry.index;
+      const n = idx ? idx.count : pos.count;
+      for (let i = 0; i < n; i += 3) {
+        const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
+        a.fromBufferAttribute(pos, i0).applyMatrix4(m.matrixWorld);
+        b.fromBufferAttribute(pos, i1).applyMatrix4(m.matrixWorld);
+        c.fromBufferAttribute(pos, i2).applyMatrix4(m.matrixWorld);
+        const area = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).length() / 2;
+        if (area <= 0) continue;
+        tris.push([a.clone(), b.clone(), c.clone()]);
+        total += area; areas.push(total);
+      }
+    });
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const r = Math.random() * total;
+      let lo = 0, hi = areas.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (areas[mid] < r) lo = mid + 1; else hi = mid; }
+      const [p0, p1, p2] = tris[lo];
+      let u = Math.random(), v = Math.random();
+      if (u + v > 1) { u = 1 - u; v = 1 - v; }
+      out.push(p0.clone().addScaledVector(new THREE.Vector3().subVectors(p1, p0), u)
+                         .addScaledVector(new THREE.Vector3().subVectors(p2, p0), v));
+    }
+    return out;
+  }
+
+  // ---------- the slate (clapperboard) with your logo on it ----------
+  function stripes(flip) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 64;
+    const x = c.getContext('2d');
+    x.fillStyle = '#111110'; x.fillRect(0, 0, 512, 64);
+    x.fillStyle = PAPER;
+    for (let i = -1; i < 8; i++) {
+      const o = i * 72;
+      x.beginPath();
+      if (flip) { x.moveTo(o, 0); x.lineTo(o + 36, 0); x.lineTo(o + 72, 64); x.lineTo(o + 36, 64); }
+      else { x.moveTo(o + 36, 0); x.lineTo(o + 72, 0); x.lineTo(o + 36, 64); x.lineTo(o, 64); }
+      x.fill();
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+
+  function boardTexture(logo) {
+    const W = 1024, H = 672, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    x.fillStyle = '#141412'; x.fillRect(0, 0, W, H);
+    // logo in chalk-white
+    const lc = document.createElement('canvas'); lc.width = logo.naturalWidth; lc.height = logo.naturalHeight;
+    const lx = lc.getContext('2d'); lx.drawImage(logo, 0, 0);
+    lx.globalCompositeOperation = 'source-in'; lx.fillStyle = PAPER; lx.fillRect(0, 0, lc.width, lc.height);
+    const lw = W * .74, lh = lw * lc.height / lc.width;
+    x.drawImage(lc, (W - lw) / 2, 120 - lh / 2 + 20, lw, lh);
+    // chalk lines and fields
+    x.strokeStyle = 'rgba(238,235,217,.75)'; x.lineWidth = 4;
+    const line = (x1, y1, x2, y2) => { x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke(); };
+    line(40, 250, W - 40, 250); line(40, 470, W - 40, 470);
+    line(W / 3, 250, W / 3, 470); line(W * 2 / 3, 250, W * 2 / 3, 470); line(W / 2, 470, W / 2, H - 30);
+    x.fillStyle = 'rgba(238,235,217,.7)';
+    x.font = '600 28px "Inter Tight", Arial, sans-serif';
+    [['ROLL', 0], ['SCENE', 1], ['TAKE', 2]].forEach(([l, i]) => x.fillText(l, 60 + i * W / 3, 295));
+    x.fillText('DIRECTOR', 60, 515); x.fillText('DATE', W / 2 + 20, 515);
+    x.fillStyle = PAPER;
+    x.font = '700 92px "Inter Tight", Arial, sans-serif';
+    [['01', 0], ['1A', 1], ['1', 2]].forEach(([v, i]) => x.fillText(v, 60 + i * W / 3, 420));
+    x.font = '600 46px "Inter Tight", Arial, sans-serif';
+    x.fillText('CHECK THE GATE', 60, 600);
+    const d = new Date();
+    x.fillText(`${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`, W / 2 + 20, 600);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+  }
+
+  function buildSlate(logo) {
+    const g = new THREE.Group();
+    const W = 3.2, H = 2.1, D = .08, BAR = .3;
+    const dark = new THREE.MeshStandardMaterial({ color: 0x141412, roughness: .7 });
+    const face = new THREE.MeshStandardMaterial({ map: boardTexture(logo), roughness: .8 });
+    const s1 = new THREE.MeshStandardMaterial({ map: stripes(false), roughness: .6 });
+    const s2 = new THREE.MeshStandardMaterial({ map: stripes(true), roughness: .6 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0x9a978a, roughness: .3, metalness: .8 });
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(W, H, D), [dark, dark, dark, dark, face, dark]));
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(W, BAR, D + .01), [dark, dark, dark, dark, s1, dark]);
+    bar.position.y = H / 2 + BAR / 2; g.add(bar);
+    const pivot = new THREE.Group(); pivot.position.set(-W / 2, H / 2 + BAR, 0); g.add(pivot);
+    const stick = new THREE.Mesh(new THREE.BoxGeometry(W, BAR, D + .01), [dark, dark, dark, dark, s2, dark]);
+    stick.position.set(W / 2, BAR / 2, 0); pivot.add(stick);
+    const hinge = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, D + .08, 16), metal);
+    hinge.rotation.x = Math.PI / 2; hinge.position.set(-W / 2 + .07, H / 2 + BAR, 0); g.add(hinge);
+    return { g, pivot };
+  }
+
+  // ---------- run it ----------
+  async function run() {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!img.complete) { try { await img.decode(); } catch (e) { return; } }
+    try { await document.fonts.ready; } catch (e) {}
+    // wait until the logo has fully faded in
+    const wait = 1500 - performance.now();
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    if (performance.now() > 2900 || intro.classList.contains('skip')) return; // too late; simple fade plays
+
+    const N = innerWidth < 700 ? 5000 : 8000;
+    let logo;
+    try { logo = sampleLogo(img, N); } catch (e) { return; }
+
+    const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight, false);
+    intro.classList.add('cine');
+
+    const scene = new THREE.Scene();
+    const DIST = 10, FOV = 35;
+    const cam = new THREE.PerspectiveCamera(FOV, innerWidth / innerHeight, .1, 100);
+    cam.position.set(0, 0, DIST);
+    const visH = 2 * DIST * Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    const visW = visH * cam.aspect;
+    const px = visH / innerHeight;          // screen pixels → 3D units
+    const S = Math.min(1, visW / 6.2);      // shrink everything on narrow screens
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8778, 1.3));
+    const key = new THREE.DirectionalLight(0xffffff, 2.6); key.position.set(4, 6, 8); scene.add(key);
+    const rim = new THREE.DirectionalLight(0xffffff, 1.6); rim.position.set(-6, 3, -4); scene.add(rim);
+
+    const world = new THREE.Group(); scene.add(world); // shaken when the slate snaps
+
+    // camera, posed at a 3/4 angle for the morph
+    const { g: camera3d, iris, mats } = buildCamera();
+    camera3d.scale.setScalar(S);
+    camera3d.position.set(0, .25 * S, 0);
+    camera3d.rotation.set(.12, -.65, 0);
+    world.add(camera3d);
+    mats.forEach(m => { m.transparent = true; m.opacity = 0; });
+    camera3d.visible = false;
+
+    // dots: start on the logo, end on the camera
+    const rect = img.getBoundingClientRect();
+    const starts = logo.pts.map(([u, v]) => new THREE.Vector3(
+      (rect.left + u * rect.width - innerWidth / 2) * px,
+      -(rect.top + v * rect.height - innerHeight / 2) * px, 0));
+    const ends = sampleSurface(camera3d, N);
+    starts.sort((p, q) => p.x - q.x);       // left letters → left side of camera
+    ends.sort((p, q) => p.x - q.x);
+    const aStart = new Float32Array(N * 3), aEnd = new Float32Array(N * 3), aMid = new Float32Array(N * 3), aDelay = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const s = starts[i], e = ends[i];
+      aStart.set([s.x, s.y, s.z], i * 3);
+      aEnd.set([e.x, e.y, e.z], i * 3);
+      aMid.set([(s.x + e.x) / 2 + (Math.random() - .5) * 2.4 * S,
+                (s.y + e.y) / 2 + (Math.random() - .5) * 2.4 * S,
+                2 + Math.random() * 2.5], i * 3);
+      aDelay[i] = (i / N) * .25 + Math.random() * .1;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(aStart.slice(), 3));
+    geo.setAttribute('aStart', new THREE.BufferAttribute(aStart, 3));
+    geo.setAttribute('aEnd', new THREE.BufferAttribute(aEnd, 3));
+    geo.setAttribute('aMid', new THREE.BufferAttribute(aMid, 3));
+    geo.setAttribute('aDelay', new THREE.BufferAttribute(aDelay, 1));
+    const dot = Math.min(4, Math.max(1.6, Math.sqrt(logo.coverage * rect.width * rect.height / N) * 1.7));
+    const dotsMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uP: { value: 0 }, uSize: { value: dot }, uPR: { value: renderer.getPixelRatio() },
+                  uDist: { value: DIST }, uOpacity: { value: 0 }, uColor: { value: new THREE.Color(INK) } },
+      vertexShader: `
+        uniform float uP, uSize, uPR, uDist;
+        attribute vec3 aStart, aEnd, aMid; attribute float aDelay;
+        void main(){
+          float t = clamp((uP - aDelay) / 0.65, 0.0, 1.0);
+          t = t * t * (3.0 - 2.0 * t);
+          vec3 p = (1.0 - t) * (1.0 - t) * aStart + 2.0 * (1.0 - t) * t * aMid + t * t * aEnd;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = uSize * uPR * (uDist / -mv.z);
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform float uOpacity;
+        void main(){
+          vec2 c = gl_PointCoord - 0.5;
+          if (dot(c, c) > 0.25) discard;
+          gl_FragColor = vec4(uColor, uOpacity);
+        }`
+    });
+    const dots = new THREE.Points(geo, dotsMat);
+    dots.frustumCulled = false;
+    world.add(dots);
+
+    // slate, waiting above the screen
+    const { g: slate, pivot } = buildSlate(img);
+    const slateY = -.5 * S, slateZ = 4.2;
+    slate.scale.setScalar(S * .8);
+    slate.position.set(0, visH, slateZ);
+    pivot.rotation.z = .55;              // clapstick open
+    slate.visible = false;
+    world.add(slate);
+
+    // swap the flat logo for the dots
+    img.style.animation = 'none'; img.style.opacity = 1;
+    void img.offsetWidth;
+    img.style.transition = 'opacity .3s'; img.style.opacity = 0;
+
+    const t0 = performance.now();
+    let finished = false;
+    function cleanup() {
+      renderer.setAnimationLoop(null);
+      setTimeout(() => { renderer.dispose(); cvs.remove(); }, 1000);
+    }
+
+    renderer.setAnimationLoop(() => {
+      if (intro.classList.contains('skip')) { cleanup(); return; }
+      const t = (performance.now() - t0) / 1000;
+
+      // 1. dots morph
+      dotsMat.uniforms.uOpacity.value = prog(t, 0, .3) * (1 - prog(t, T.solidStart + .05, T.solidEnd + .05));
+      dotsMat.uniforms.uP.value = prog(t, T.morphStart, T.morphEnd);
+      dots.visible = t < T.solidEnd + .1;
+
+      // 2. camera turns solid, then swings to stare at the viewer
+      const solid = prog(t, T.solidStart, T.solidEnd);
+      camera3d.visible = solid > 0;
+      mats.forEach(m => { m.opacity = solid; m.transparent = solid < 1; m.depthWrite = solid > .5; });
+      const turn = easeInOut(prog(t, T.turnStart, T.turnEnd));
+      camera3d.rotation.set(lerp(.12, 0, turn), lerp(-.65, 0, turn), 0);
+      camera3d.position.z = lerp(0, .6, turn);
+      iris.scale.setScalar(lerp(1, .72, easeInOut(prog(t, T.turnEnd, T.stareEnd))));
+
+      // 3. slate drops in, then snaps
+      const drop = prog(t, T.slateStart, T.slateEnd);
+      slate.visible = drop > 0;
+      slate.position.y = lerp(visH, slateY, easeOutBack(drop));
+      slate.rotation.z = lerp(.3, -.04, easeOutBack(drop));
+      pivot.rotation.z = lerp(.55, 0, Math.pow(prog(t, T.snapStart, T.snapEnd), 2));
+
+      // little jolt when it snaps
+      const shake = t > T.snapEnd ? 1 - prog(t, T.snapEnd, T.shakeEnd) : 0;
+      world.position.set((Math.random() - .5) * .12 * shake * S, (Math.random() - .5) * .12 * shake * S, 0);
+
+      renderer.render(scene, cam);
+
+      // 4. fade to homepage
+      if (t > T.finish && !finished) {
+        finished = true;
+        intro.classList.add('done');
+        setTimeout(cleanup, 950);
+      }
+    });
+  }
+  run();
+</script>
+
+<!-- ============================================================
      3D BARS (Three.js) — a quiet black-and-cream field of bars
      that ripples inside the reel frame until the video plays.
      ============================================================ -->
-<script type="importmap">
-  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
-</script>
 <script type="module">
   import * as THREE from 'three';
 
